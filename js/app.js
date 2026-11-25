@@ -10,6 +10,7 @@ import {
   iniciarCamara, seguirUbicacion, pedirPermisoOrientacion, escucharOrientacion, norm360,
 } from './sensores.js';
 import { dibujarAgua, pintarMapaBase, dibujarMinimapa } from './render.js';
+import { crearMapaCompleto } from './mapa.js';
 
 // Radio de datos alrededor del usuario (m). Unos 120 x 150 celdas de 5 m.
 const RADIO_DATOS = 300;
@@ -357,6 +358,45 @@ for (const t of LIMITES) {
   $('#lista-limites').appendChild(li);
 }
 $('#btn-info').addEventListener('click', () => $('#info').showModal());
+
+// ---------- Mapa a pantalla completa ----------
+
+function describirPunto(lat, lon) {
+  const m = estado.malla;
+  const cota = cotaEn(m, lat, lon);
+  if (!Number.isFinite(cota)) return 'Sin datos de altura en este punto.';
+  const partes = [`Suelo a ${fmt(cota)} m`];
+  const i = indiceCelda(m, lat, lon);
+  const s = i >= 0 && estado.superficie ? estado.superficie[i] : NaN;
+  if (!Number.isNaN(s) && s - cota >= 0.05) partes.push(`agua ≈${fmt(s - cota)} m (${textoCuerpo(s - cota)})`);
+  else if (!Number.isNaN(s)) partes.push('agua en el borde');
+  else partes.push('seco en este escenario');
+  if (estado.modo === 'patricova') {
+    const z = zonasEnPunto(estado.zonas, lat, lon)[0];
+    partes.push(z ? z.descripcion : 'fuera de zonas PATRICOVA');
+  }
+  return partes.join(' · ');
+}
+
+const mapaCompleto = crearMapaCompleto({
+  seccion: $('#mapa-completo'),
+  lienzo: $('#mapa-lienzo'),
+  info: $('#mapa-info'),
+  btnCerrar: $('#btn-cerrar-mapa'),
+  btnCentrar: $('#btn-centrar-mapa'),
+  describir: describirPunto,
+  obtener: () => ({
+    malla: estado.malla,
+    base: estado.mapaBase,
+    zonas: estado.zonas,
+    lat: estado.posicion?.lat,
+    lon: estado.posicion?.lon,
+    rumbo: norm360(estado.orientacion.rumbo + estado.ajusteNorte),
+    modo: estado.modo,
+  }),
+});
+$('#minimapa').addEventListener('click', () => mapaCompleto.abrir());
+$('#minimapa').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') mapaCompleto.abrir(); });
 $('#asa').addEventListener('click', () => {
   const plegado = $('#panel').classList.toggle('plegado');
   $('#asa').textContent = plegado ? 'Mostrar controles' : 'Ocultar controles';
@@ -390,6 +430,7 @@ function redimensionar() {
 addEventListener('resize', redimensionar);
 
 function bucle() {
+  if (mapaCompleto.estaAbierto()) { requestAnimationFrame(bucle); return; }
   const p = estado.posicion;
   const o = estado.orientacion;
   const rumbo = norm360(o.rumbo + estado.ajusteNorte);

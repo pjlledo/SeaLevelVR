@@ -132,3 +132,34 @@ dialog li { margin: 6px 0; font-size: 14px; }
   background: #3a2a00; color: var(--aviso); border: 1px solid var(--aviso);
   padding: 8px 14px; border-radius: 10px; font-size: 13.5px; max-width: calc(100% - 32px);
 }
+
+#minimapa { cursor: zoom-in; }
+#minimapa-pista {
+  position: absolute; right: 60px; top: calc(max(10px, env(safe-area-inset-top)) + 112px);
+  font-size: 14px; background: var(--panel); border-radius: 6px; padding: 0 5px; pointer-events: none;
+}
+
+#mapa-completo { position: fixed; inset: 0; z-index: 25; background: #0b1622; }
+#mapa-lienzo { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.mapa-barra {
+  position: absolute; left: 12px; right: 12px; top: max(10px, env(safe-area-inset-top));
+  display: flex; gap: 8px; align-items: center;
+}
+.mapa-barra .primario { width: auto; margin: 0; padding: 10px 16px; }
+.mapa-zoom {
+  position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.mapa-zoom .redondo, .mapa-barra .redondo { width: 44px; height: 44px; font-size: 20px; }
+.mapa-pie {
+  position: absolute; left: 0; right: 0; bottom: 0; background: var(--panel);
+  border-top: 1px solid var(--borde); padding: 10px 16px max(10px, env(safe-area-inset-bottom));
+}
+#mapa-info { margin: 0 0 6px; font-size: 14.5px; min-height: 2.9em; }
+.leyenda { margin: 0; font-size: 12px; color: var(--suave); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.leyenda .item { display: inline-flex; gap: 4px; align-items: center; white-space: nowrap; margin-right: 6px; }
+.leyenda i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.c-agua { background: #2f8fdc; }
+.c-zona { border: 2px solid #fff; }
+.c-geo { border: 2px dashed #e6aa5a; }
+.c-yo { background: #ffd84d; border-radius: 50% !important; }
