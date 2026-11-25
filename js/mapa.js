@@ -1,271 +1,246 @@
-// Mapa a pantalla completa: se abre al pulsar el minimapa.
-// Se puede desplazar con un dedo (o el ratón), hacer zoom con dos dedos (o la rueda)
-// y tocar un punto para ver su cota y el agua que tendría.
+// Mapa a pantalla completa de toda la Comunitat Valenciana (se abre al pulsar el minimapa).
+//
+// Decisión: no se descarga PATRICOVA entero. El propio servicio del ICV dibuja las zonas
+// para cada trozo del mapa (petición "export" de ArcGIS), así que se ve todo el territorio a
+// cualquier escala, siempre con la versión vigente y sin mantener copias en el repositorio.
+// La subida del mar se calcula con el MDT del IGN de la zona visible, con celdas más grandes
+// cuanto más lejos está el zoom (de 5 m a 1 km).
+//
+// Usa Leaflet (BSD-2), copiado en vendor/leaflet.
 
-import { M_POR_GRADO_LAT, mPorGradoLon } from './datos.js';
+import {
+  COBERTURAS_MDT, CAPAS_POR_PERIODO, CAPA_GEOMORFOLOGICA, pedirRejilla, urlImagenPatricova,
+  identificarPatricova, pedirMDT, cotaEn, M_POR_GRADO_LAT, mPorGradoLon,
+} from './datos.js';
 
-const RAD = Math.PI / 180;
-const ZOOM_MIN = 0.3; // respecto al zoom que encaja toda la rejilla
-const ZOOM_MAX = 12;
+const L = window.L;
+const CV = [[37.75, -1.65], [40.87, 0.8]]; // caja de la Comunitat Valenciana
+const MAX_CELDAS = 360; // celdas por lado al pedir el MDT de la vista
 
-/**
- * obtener() debe devolver el estado actual:
- * { malla, base (canvas del relieve), zonas, lat, lon, rumbo, modo }
- * describir(lat, lon) devuelve un texto con la situación de ese punto.
- */
-export function crearMapaCompleto({ seccion, lienzo, info, btnCerrar, btnCentrar, obtener, describir }) {
-  const ctx = lienzo.getContext('2d');
-  // Vista: centro en metros dentro de la rejilla y escala en píxeles por metro.
-  const vista = { cx: 0, cy: 0, escala: 1, ajuste: 1 };
-  const punteros = new Map();
-  let gesto = null; // { tipo, ... }
-  let marca = null; // punto tocado { lat, lon }
+const fmt = (n, d = 1) => n.toLocaleString('es-ES', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+// Capa de teselas que pide cada tesela de 256 px al servicio "export" de PATRICOVA.
+function capaPatricova(obtenerCapas) {
+  const Capa = L.GridLayer.extend({
+    createTile(coords, hecho) {
+      const img = document.createElement('img');
+      img.alt = '';
+      const tam = this.getTileSize();
+      const nw = this._map.unproject(coords.scaleBy(tam), coords.z);
+      const se = this._map.unproject(coords.add([1, 1]).scaleBy(tam), coords.z);
+      const a = L.CRS.EPSG3857.project(nw), b = L.CRS.EPSG3857.project(se);
+      img.onload = () => hecho(null, img);
+      img.onerror = () => hecho(new Error('tesela PATRICOVA'), img);
+      img.src = urlImagenPatricova([a.x, b.y, b.x, a.y], tam.x, tam.y, obtenerCapas());
+      return img;
+    },
+  });
+  return new Capa({
+    opacity: 0.7,
+    bounds: CV,
+    attribution: 'PATRICOVA 2015 © Generalitat Valenciana / ICV (CC BY)',
+  });
+}
+
+export function crearMapaCompleto({ seccion, contenedor, info, estadoEscala, btnCerrar, btnCentrar, btnTodo, obtener }) {
+  let mapa = null;
+  let capaPat = null;
+  let capaAgua = null;
+  let marcaUsuario = null;
+  let marcaPunto = null;
   let abierto = false;
-  let dpr = 1;
+  let peticionAgua = null;
+  let temporizador = null;
 
-  // Coordenadas en metros: x hacia el este desde el borde oeste, y hacia el sur desde el borde norte.
-  const aMetros = (m, lat, lon) => ({
-    x: (lon - m.x0) * mPorGradoLon(m.latRef),
-    y: (m.y0 + m.nrows * m.csy - lat) * M_POR_GRADO_LAT,
-  });
-  const aGrados = (m, x, y) => ({
-    lon: m.x0 + x / mPorGradoLon(m.latRef),
-    lat: m.y0 + m.nrows * m.csy - y / M_POR_GRADO_LAT,
-  });
-  const tam = (m) => ({
-    w: m.ncols * m.csx * mPorGradoLon(m.latRef),
-    h: m.nrows * m.csy * M_POR_GRADO_LAT,
-  });
-  const malla = () => {
-    const m = obtener().malla;
-    if (m && m.latRef == null) m.latRef = m.y0 + (m.nrows * m.csy) / 2;
-    return m;
-  };
-  const aPantalla = (x, y) => ({
-    sx: (x - vista.cx) * vista.escala + lienzo.clientWidth / 2,
-    sy: (y - vista.cy) * vista.escala + lienzo.clientHeight / 2,
-  });
-  const desdePantalla = (sx, sy) => ({
-    x: (sx - lienzo.clientWidth / 2) / vista.escala + vista.cx,
-    y: (sy - lienzo.clientHeight / 2) / vista.escala + vista.cy,
-  });
+  function crear() {
+    mapa = L.map(contenedor, {
+      zoomControl: false,
+      minZoom: 6,
+      maxZoom: 18,
+      maxBounds: [[36.5, -3.5], [42, 2.5]],
+      attributionControl: true,
+    });
+    mapa.attributionControl.setPrefix('<a href="https://leafletjs.com" target="_blank" rel="noopener">Leaflet</a>');
+    const base = L.tileLayer(
+      'https://www.ign.es/wmts/ign-base?service=WMTS&request=GetTile&version=1.0.0&layer=IGNBase-gris&style=default'
+      + '&tilematrixset=GoogleMapsCompatible&format=image/jpeg&tilematrix={z}&tilerow={y}&tilecol={x}',
+      { maxZoom: 18, attribution: 'Mapa base © IGN, CC BY 4.0 scne.es' },
+    );
+    const orto = L.tileLayer(
+      'https://www.ign.es/wmts/pnoa-ma?service=WMTS&request=GetTile&version=1.0.0&layer=OI.OrthoimageCoverage&style=default'
+      + '&tilematrixset=GoogleMapsCompatible&format=image/jpeg&tilematrix={z}&tilerow={y}&tilecol={x}',
+      { maxZoom: 19, attribution: 'PNOA © IGN, CC BY 4.0 scne.es' },
+    );
+    base.addTo(mapa);
+    L.control.layers({ 'Mapa': base, 'Foto aérea': orto }, null, { position: 'topright' }).addTo(mapa);
+    L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(mapa);
 
-  function redimensionar() {
-    dpr = Math.min(2, window.devicePixelRatio || 1);
-    lienzo.width = Math.round(lienzo.clientWidth * dpr);
-    lienzo.height = Math.round(lienzo.clientHeight * dpr);
-  }
+    capaPat = capaPatricova(() => {
+      const e = obtener();
+      return [...CAPAS_POR_PERIODO[e.periodo], CAPA_GEOMORFOLOGICA];
+    });
 
-  function centrar(conZoom) {
-    const m = malla();
-    const e = obtener();
-    if (!m) return;
-    const t = tam(m);
-    vista.ajuste = Math.min(lienzo.clientWidth / t.w, lienzo.clientHeight / t.h) * 0.95;
-    if (conZoom) vista.escala = vista.ajuste;
-    const p = e.lat != null ? aMetros(m, e.lat, e.lon) : { x: t.w / 2, y: t.h / 2 };
-    vista.cx = p.x;
-    vista.cy = p.y;
-  }
-
-  function limitar() {
-    const m = malla();
-    if (!m) return;
-    const t = tam(m);
-    vista.escala = Math.max(vista.ajuste * ZOOM_MIN, Math.min(vista.ajuste * ZOOM_MAX, vista.escala));
-    vista.cx = Math.max(0, Math.min(t.w, vista.cx));
-    vista.cy = Math.max(0, Math.min(t.h, vista.cy));
-  }
-
-  function zoomEn(sx, sy, factor) {
-    const antes = desdePantalla(sx, sy);
-    vista.escala *= factor;
-    limitar();
-    const despues = desdePantalla(sx, sy);
-    vista.cx += antes.x - despues.x;
-    vista.cy += antes.y - despues.y;
-    limitar();
-  }
-
-  function dibujar() {
-    if (!abierto) return;
-    const m = malla();
-    const e = obtener();
-    const W = lienzo.clientWidth, H = lienzo.clientHeight;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#0b1622';
-    ctx.fillRect(0, 0, W, H);
-    if (!m || !e.base) {
-      ctx.fillStyle = '#fff';
-      ctx.font = '15px system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Aún no hay datos del terreno para este punto', W / 2, H / 2);
-      ctx.textAlign = 'start';
-      requestAnimationFrame(dibujar);
-      return;
+    mapa.on('moveend', programarAgua);
+    mapa.on('click', (ev) => consultarPunto(ev.latlng.lat, ev.latlng.lng));
+    for (const [sel, f] of [['[data-zoom="+"]', 1], ['[data-zoom="-"]', -1]]) {
+      seccion.querySelector(sel)?.addEventListener('click', () => mapa.setZoom(mapa.getZoom() + f));
     }
-    const t = tam(m);
-    const o = aPantalla(0, 0);
-    ctx.imageSmoothingEnabled = vista.escala < 1.5;
-    ctx.drawImage(e.base, o.sx, o.sy, t.w * vista.escala, t.h * vista.escala);
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(o.sx, o.sy, t.w * vista.escala, t.h * vista.escala);
+  }
 
-    // Contornos de las zonas PATRICOVA
+  // ---------- Capas según el escenario ----------
+
+  function actualizar() {
+    if (!mapa) return;
+    const e = obtener();
     if (e.modo === 'patricova') {
-      for (const z of e.zonas || []) {
-        ctx.strokeStyle = z.geomorfologica ? 'rgba(230,170,90,0.9)' : 'rgba(255,255,255,0.85)';
-        ctx.setLineDash(z.geomorfologica ? [6, 4] : []);
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for (const pol of z.poligonos) for (const anillo of pol) {
-          anillo.forEach(([lon, lat], k) => {
-            const p = aMetros(m, lat, lon);
-            const s = aPantalla(p.x, p.y);
-            if (k === 0) ctx.moveTo(s.sx, s.sy); else ctx.lineTo(s.sx, s.sy);
-          });
-          ctx.closePath();
-        }
-        ctx.stroke();
-      }
-      ctx.setLineDash([]);
+      if (capaAgua) { mapa.removeLayer(capaAgua); capaAgua = null; }
+      if (!mapa.hasLayer(capaPat)) capaPat.addTo(mapa);
+      else capaPat.redraw();
+      estadoEscala.textContent = `Zonas PATRICOVA hasta ${e.periodo} años (en naranja claro, la peligrosidad geomorfológica).`;
+    } else {
+      if (mapa.hasLayer(capaPat)) mapa.removeLayer(capaPat);
+      programarAgua();
     }
-
-    // Usuario y cono de visión
     if (e.lat != null) {
-      const p = aMetros(m, e.lat, e.lon);
-      const s = aPantalla(p.x, p.y);
-      const a = (e.rumbo - 90) * RAD;
-      ctx.fillStyle = 'rgba(255, 230, 120, 0.3)';
-      ctx.beginPath();
-      ctx.moveTo(s.sx, s.sy);
-      ctx.arc(s.sx, s.sy, Math.min(W, H) * 0.35, a - 0.43, a + 0.43);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = '#ffd84d';
-      ctx.strokeStyle = '#222';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(s.sx, s.sy, 7, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+      if (!marcaUsuario) {
+        marcaUsuario = L.circleMarker([e.lat, e.lon], {
+          radius: 8, color: '#222', weight: 2, fillColor: '#ffd84d', fillOpacity: 1,
+        }).bindTooltip('Tú').addTo(mapa);
+      } else marcaUsuario.setLatLng([e.lat, e.lon]);
     }
-
-    // Punto tocado
-    if (marca) {
-      const p = aMetros(m, marca.lat, marca.lon);
-      const s = aPantalla(p.x, p.y);
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(s.sx - 9, s.sy); ctx.lineTo(s.sx + 9, s.sy);
-      ctx.moveTo(s.sx, s.sy - 9); ctx.lineTo(s.sx, s.sy + 9);
-      ctx.stroke();
-    }
-
-    // Norte y escala
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 13px system-ui, sans-serif';
-    ctx.fillText('N ↑', W - 40, 80);
-    const opciones = [10, 20, 50, 100, 200, 500];
-    const barra = opciones.find((d) => d * vista.escala > 70) || 500;
-    const yb = H - 150;
-    ctx.fillRect(16, yb, barra * vista.escala, 4);
-    ctx.font = '12px system-ui, sans-serif';
-    ctx.fillText(`${barra} m`, 16, yb - 6);
-
-    requestAnimationFrame(dibujar);
   }
 
-  function mostrarPunto(sx, sy) {
-    const m = malla();
-    if (!m) return;
-    const { x, y } = desdePantalla(sx, sy);
-    const t = tam(m);
-    if (x < 0 || y < 0 || x > t.w || y > t.h) {
-      marca = null;
-      info.textContent = 'Fuera de la zona con datos (unos 300 m alrededor de ti).';
+  function programarAgua() {
+    clearTimeout(temporizador);
+    temporizador = setTimeout(calcularAgua, 250);
+  }
+
+  async function calcularAgua() {
+    const e = obtener();
+    if (!mapa || !abierto || e.modo !== 'mar') return;
+    const b = mapa.getBounds().pad(0.05);
+    // Solo la parte visible que cae dentro de la Comunitat Valenciana (con un margen).
+    const c = {
+      s: Math.max(b.getSouth(), CV[0][0] - 0.1), n: Math.min(b.getNorth(), CV[1][0] + 0.1),
+      o: Math.max(b.getWest(), CV[0][1] - 0.1), e: Math.min(b.getEast(), CV[1][1] + 0.1),
+    };
+    if (c.s >= c.n || c.o >= c.e) {
+      if (capaAgua) { mapa.removeLayer(capaAgua); capaAgua = null; }
+      estadoEscala.textContent = 'Fuera de la Comunitat Valenciana: la subida del mar solo se calcula dentro.';
       return;
     }
-    marca = aGrados(m, x, y);
+    const latC = (c.s + c.n) / 2;
+    const ladoM = Math.max((c.e - c.o) * mPorGradoLon(latC), (c.n - c.s) * M_POR_GRADO_LAT);
+    const [res, cobertura] = COBERTURAS_MDT.find(([r]) => ladoM / r <= MAX_CELDAS) || COBERTURAS_MDT.at(-1);
+    peticionAgua?.abort();
+    const ctl = new AbortController();
+    peticionAgua = ctl;
+    estadoEscala.textContent = `Calculando el agua con celdas de ${res} m…`;
+    try {
+      const m = await pedirRejilla(c, cobertura, ctl.signal);
+      if (ctl.signal.aborted) return;
+      pintarAgua(m, e.nivel);
+      estadoEscala.textContent = `Mar a +${fmt(e.nivel, 2)} m. Terreno con celdas de ${res} m: `
+        + (res > 25 ? 'acerca el zoom para más detalle.' : 'máximo detalle disponible.');
+    } catch (err) {
+      if (!ctl.signal.aborted) estadoEscala.textContent = 'No se pudo consultar la elevación del IGN para esta zona.';
+    }
+  }
+
+  // Dibuja en azul las celdas por debajo del nivel elegido (y por encima de 0, porque el mar
+  // ya aparece en el mapa base). Las filas se recolocan en Mercator para que encajen con el mapa.
+  function pintarAgua(m, nivel) {
+    const norte = m.y0 + m.nrows * m.csy, sur = m.y0;
+    const oeste = m.x0, este = m.x0 + m.ncols * m.csx;
+    const yMerc = (lat) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360));
+    const yN = yMerc(norte), yS = yMerc(sur);
+    const lienzo = document.createElement('canvas');
+    lienzo.width = m.ncols;
+    lienzo.height = m.nrows;
+    const ctx = lienzo.getContext('2d');
+    const img = ctx.createImageData(m.ncols, m.nrows);
+    let celdas = 0;
+    for (let j = 0; j < m.nrows; j++) {
+      const y = yN + ((j + 0.5) / m.nrows) * (yS - yN);
+      const lat = (360 / Math.PI) * Math.atan(Math.exp(y)) - 90;
+      const r = Math.min(m.nrows - 1, Math.max(0, Math.floor((norte - lat) / m.csy)));
+      for (let c = 0; c < m.ncols; c++) {
+        const z = m.z[r * m.ncols + c];
+        if (!(z > 0 && z < nivel)) continue;
+        const k = (j * m.ncols + c) * 4;
+        const prof = nivel - z;
+        img.data[k] = 30; img.data[k + 1] = 120; img.data[k + 2] = 225;
+        img.data[k + 3] = Math.round(255 * Math.min(0.85, 0.45 + prof / 4));
+        celdas++;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    if (capaAgua) mapa.removeLayer(capaAgua);
+    capaAgua = L.imageOverlay(lienzo.toDataURL(), [[sur, oeste], [norte, este]], {
+      opacity: 0.8, attribution: 'Obra derivada de MDT CC-BY 4.0 scne.es',
+      className: 'agua-pixelada',
+    }).addTo(mapa);
+    return celdas;
+  }
+
+  // ---------- Consulta de un punto ----------
+
+  async function consultarPunto(lat, lon) {
     const e = obtener();
-    let dist = '';
+    if (marcaPunto) marcaPunto.setLatLng([lat, lon]);
+    else marcaPunto = L.marker([lat, lon], { icon: L.divIcon({ className: 'marca-punto', html: '+', iconSize: [22, 22] }) }).addTo(mapa);
+    info.textContent = 'Consultando este punto…';
+    const partes = [];
+    const [cota, zonas] = await Promise.allSettled([
+      pedirMDT(lat, lon, 12).then((m) => cotaEn(m, lat, lon)),
+      e.modo === 'patricova' ? identificarPatricova(lat, lon) : Promise.resolve(null),
+    ]);
+    if (cota.status === 'fulfilled' && Number.isFinite(cota.value)) {
+      const z = cota.value;
+      partes.push(`Suelo a ${fmt(z)} m`);
+      if (e.modo === 'mar') {
+        partes.push(z <= 0 ? 'mar' : z < e.nivel ? `agua ≈${fmt(e.nivel - z)} m` : `${fmt(z - e.nivel)} m por encima del agua`);
+      }
+    } else partes.push('sin altura del IGN');
+    if (zonas.status === 'fulfilled' && zonas.value) {
+      const enPeriodo = zonas.value.filter((z) => !z.retorno || z.retorno <= e.periodo);
+      partes.push(zonas.value.length
+        ? (enPeriodo[0] || zonas.value[0]).descripcion + (enPeriodo.length ? '' : ` (no entra con ${e.periodo} años)`)
+        : 'fuera de zonas PATRICOVA');
+    } else if (zonas.status === 'rejected') partes.push('PATRICOVA no responde');
     if (e.lat != null) {
-      const p = aMetros(m, e.lat, e.lon);
-      const d = Math.hypot(x - p.x, y - p.y);
-      dist = ` · a ${Math.round(d)} m de ti`;
+      const d = mapa.distance([lat, lon], [e.lat, e.lon]);
+      partes.push(d < 1000 ? `a ${Math.round(d)} m de ti` : `a ${fmt(d / 1000)} km de ti`);
     }
-    info.textContent = describir(marca.lat, marca.lon) + dist;
+    info.textContent = partes.join(' · ');
   }
 
-  // ---------- Gestos ----------
-  lienzo.addEventListener('pointerdown', (ev) => {
-    try { lienzo.setPointerCapture(ev.pointerId); } catch { /* sin captura */ }
-    punteros.set(ev.pointerId, { x: ev.offsetX, y: ev.offsetY, x0: ev.offsetX, y0: ev.offsetY });
-    if (punteros.size === 1) gesto = { tipo: 'mover', movido: false };
-    if (punteros.size === 2) {
-      const [a, b] = [...punteros.values()];
-      gesto = { tipo: 'pellizco', dist: Math.hypot(a.x - b.x, a.y - b.y), movido: true };
-    }
-  });
-  lienzo.addEventListener('pointermove', (ev) => {
-    const p = punteros.get(ev.pointerId);
-    if (!p || !gesto) return;
-    const dx = ev.offsetX - p.x, dy = ev.offsetY - p.y;
-    p.x = ev.offsetX; p.y = ev.offsetY;
-    if (gesto.tipo === 'mover' && punteros.size === 1) {
-      if (Math.hypot(p.x - p.x0, p.y - p.y0) > 6) gesto.movido = true;
-      vista.cx -= dx / vista.escala;
-      vista.cy -= dy / vista.escala;
-      limitar();
-    } else if (gesto.tipo === 'pellizco' && punteros.size === 2) {
-      const [a, b] = [...punteros.values()];
-      const d = Math.hypot(a.x - b.x, a.y - b.y);
-      if (gesto.dist > 0) zoomEn((a.x + b.x) / 2, (a.y + b.y) / 2, d / gesto.dist);
-      gesto.dist = d;
-    }
-  });
-  const soltar = (ev) => {
-    const p = punteros.get(ev.pointerId);
-    punteros.delete(ev.pointerId);
-    if (gesto?.tipo === 'mover' && !gesto.movido && p) mostrarPunto(p.x, p.y);
-    if (punteros.size === 0) gesto = null;
-    else if (punteros.size === 1) gesto = { tipo: 'mover', movido: true };
-  };
-  lienzo.addEventListener('pointerup', soltar);
-  lienzo.addEventListener('pointercancel', soltar);
-  lienzo.addEventListener('wheel', (ev) => {
-    ev.preventDefault();
-    zoomEn(ev.offsetX, ev.offsetY, Math.exp(-ev.deltaY * 0.0015));
-  }, { passive: false });
-  lienzo.addEventListener('dblclick', (ev) => zoomEn(ev.offsetX, ev.offsetY, 2));
+  // ---------- Abrir y cerrar ----------
 
-  for (const [sel, f] of [['[data-zoom="+"]', 1.6], ['[data-zoom="-"]', 1 / 1.6]]) {
-    seccion.querySelector(sel)?.addEventListener('click', () => zoomEn(lienzo.clientWidth / 2, lienzo.clientHeight / 2, f));
-  }
-  btnCentrar.addEventListener('click', () => centrar(false));
   btnCerrar.addEventListener('click', () => cerrar());
-  addEventListener('resize', () => { if (abierto) { redimensionar(); centrar(false); limitar(); } });
+  btnCentrar.addEventListener('click', () => {
+    const e = obtener();
+    if (e.lat != null) mapa.setView([e.lat, e.lon], 16);
+  });
+  btnTodo.addEventListener('click', () => mapa.fitBounds(CV));
   addEventListener('keydown', (ev) => { if (abierto && ev.key === 'Escape') cerrar(); });
 
   function abrir() {
     seccion.hidden = false;
     abierto = true;
-    redimensionar();
-    centrar(true);
-    vista.escala = vista.ajuste * 1.5; // un poco de zoom de entrada, centrado en el usuario
-    limitar();
-    marca = null;
-    info.textContent = 'Arrastra para moverte, pellizca para acercar y toca un punto para ver su altura.';
-    requestAnimationFrame(dibujar);
+    if (!mapa) crear();
+    mapa.invalidateSize();
+    const e = obtener();
+    if (e.lat != null) mapa.setView([e.lat, e.lon], 15);
+    else mapa.fitBounds(CV);
+    info.textContent = 'Arrastra para moverte, pellizca para acercar y toca un punto para ver su altura y su zona.';
+    actualizar();
   }
   function cerrar() {
     seccion.hidden = true;
     abierto = false;
-    punteros.clear();
-    gesto = null;
+    peticionAgua?.abort();
   }
 
-  return { abrir, cerrar, estaAbierto: () => abierto };
+  return { abrir, cerrar, actualizar, estaAbierto: () => abierto };
 }
