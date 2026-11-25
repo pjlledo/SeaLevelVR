@@ -18,9 +18,10 @@ export function dentroDeCV(lat, lon) {
   return lat > 37.8 && lat < 40.85 && lon > -1.55 && lon < 0.55;
 }
 
-async function pedir(url, ms = 15000) {
+async function pedir(url, ms = 15000, señalExterna) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
+  señalExterna?.addEventListener('abort', () => ctl.abort());
   try {
     const r = await fetch(url, { signal: ctl.signal });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -40,10 +41,21 @@ function caja(lat, lon, radioM) {
 
 export async function pedirMDT(lat, lon, radioM) {
   const c = caja(lat, lon, radioM);
-  const url = `${WCS}?service=WCS&request=GetCoverage&version=2.0.1&CoverageId=Elevacion4258_5`
+  return pedirRejilla(c, 'Elevacion4258_5');
+}
+
+// Coberturas del WCS del IGN por tamaño de celda (m). Las gruesas sirven para vistas amplias.
+export const COBERTURAS_MDT = [
+  [5, 'Elevacion4258_5'], [25, 'Elevacion4258_25'], [200, 'Elevacion4258_200'],
+  [500, 'Elevacion4258_500'], [1000, 'Elevacion4258_1000'],
+];
+
+// c = { s, n, o, e } en grados. Devuelve la rejilla del MDT en esa caja.
+export async function pedirRejilla(c, cobertura, señal) {
+  const url = `${WCS}?service=WCS&request=GetCoverage&version=2.0.1&CoverageId=${cobertura}`
     + `&subset=Lat(${c.s.toFixed(6)},${c.n.toFixed(6)})&subset=Long(${c.o.toFixed(6)},${c.e.toFixed(6)})`
     + `&format=application/asc`;
-  const txt = await (await pedir(url)).text();
+  const txt = await (await pedir(url, 30000, señal)).text();
   return parsearASC(txt);
 }
 
@@ -106,6 +118,30 @@ export function cotaEn(m, lat, lon) {
 }
 
 // ---------- PATRICOVA 2015 (GVA / ICV) ----------
+
+// Capas REST de peligrosidad que entran en cada periodo de retorno (nivel n = capa n + 3).
+// 25 años: niveles 1 y 3 · 100 años: además 2 y 4 · 500 años: además 5 y 6.
+export const CAPAS_POR_PERIODO = { 25: [4, 6], 100: [4, 5, 6, 7], 500: [4, 5, 6, 7, 8, 9] };
+export const CAPA_GEOMORFOLOGICA = 10;
+
+// URL de una imagen del servicio ya dibujada (ArcGIS "export") para una caja en Web Mercator.
+export function urlImagenPatricova(bbox3857, ancho, alto, capas) {
+  return `${ICV}/export?bbox=${bbox3857.join(',')}&bboxSR=3857&imageSR=3857&size=${ancho},${alto}`
+    + `&layers=show:${capas.join(',')}&format=png32&transparent=true&dpi=96&f=image`;
+}
+
+// Zonas PATRICOVA en un punto (consulta "identify", sin geometría).
+export async function identificarPatricova(lat, lon) {
+  const d = 0.001;
+  const url = `${ICV}/identify?geometry=${lon},${lat}&geometryType=esriGeometryPoint&sr=4326`
+    + `&layers=all:${CAPAS_PELIGROSIDAD.join(',')}&tolerance=0&mapExtent=${lon - d},${lat - d},${lon + d},${lat + d}`
+    + `&imageDisplay=400,400,96&returnGeometry=false&f=json`;
+  const j = await (await pedir(url)).json();
+  return (j.results || []).map((r) => {
+    const a = r.attributes || {};
+    return { nivel: Number(a.n_pelig) || null, descripcion: a.d_pelig || r.layerName, retorno: Number(a.retorno) || null, calado: a.calado || '' };
+  }).sort((a, b) => (a.nivel || 9) - (b.nivel || 9));
+}
 
 export async function pedirPatricova(lat, lon, radioM) {
   const c = caja(lat, lon, radioM);

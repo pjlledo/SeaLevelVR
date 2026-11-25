@@ -184,7 +184,7 @@ async function cargarDatos(p) {
 // Superficie del agua (cota en m) en cada celda; NaN = seco.
 function recalcular() {
   const m = estado.malla;
-  if (!m) { estado.superficie = null; actualizarTextos(); return; }
+  if (!m) { estado.superficie = null; actualizarTextos(); mapaCompleto?.actualizar(); return; }
   const sup = new Float32Array(m.z.length).fill(NaN);
   if (estado.modo === 'mar') {
     const W = nivelAgua();
@@ -201,6 +201,7 @@ function recalcular() {
   estado.superficie = sup;
   estado.mapaBase = pintarMapaBase(m, sup, estado.raster?.geomorf, estado.modo === 'patricova');
   actualizarTextos();
+  mapaCompleto?.actualizar();
 }
 
 function nivelAgua() {
@@ -329,28 +330,54 @@ function actualizarTextos() {
 
 // ---------- Controles ----------
 
-for (const b of document.querySelectorAll('.modos button')) {
-  b.addEventListener('click', () => {
-    estado.modo = b.dataset.modo;
-    for (const o of document.querySelectorAll('.modos button')) o.classList.toggle('activo', o === b);
-    $('#ctl-patricova').hidden = estado.modo !== 'patricova';
-    $('#ctl-mar').hidden = estado.modo !== 'mar';
-    recalcular();
-  });
+// Un solo punto para cambiar el escenario: mantiene sincronizados el panel y el mapa grande.
+function cambiarModo(modo) {
+  estado.modo = modo;
+  for (const o of document.querySelectorAll('[data-modo]')) o.classList.toggle('activo', o.dataset.modo === modo);
+  for (const o of document.querySelectorAll('[data-modo-mapa]')) o.classList.toggle('activo', o.dataset.modoMapa === modo);
+  $('#ctl-patricova').hidden = modo !== 'patricova';
+  $('#ctl-mar').hidden = modo !== 'mar';
+  $('#mapa-periodo').hidden = modo !== 'patricova';
+  $('#mapa-nivel').hidden = modo !== 'mar';
+  recalcular();
 }
-$('#periodo').addEventListener('input', (e) => { estado.periodo = PERIODOS[Number(e.target.value)]; recalcular(); });
-$('#nivel').addEventListener('input', (e) => { estado.nivelMar = Number(e.target.value); recalcular(); });
+function cambiarPeriodo(T) {
+  estado.periodo = T;
+  $('#periodo').value = String(PERIODOS.indexOf(T));
+  $('#mapa-periodo').value = String(T);
+  recalcular();
+}
+function cambiarNivel(m) {
+  estado.nivelMar = m;
+  $('#nivel').value = String(m);
+  const opcion = [...$('#mapa-nivel').options].find((o) => Math.abs(Number(o.value) - m) < 0.001);
+  if (opcion) $('#mapa-nivel').value = opcion.value;
+  recalcular();
+}
+
+for (const b of document.querySelectorAll('[data-modo]')) b.addEventListener('click', () => cambiarModo(b.dataset.modo));
+for (const b of document.querySelectorAll('[data-modo-mapa]')) b.addEventListener('click', () => cambiarModo(b.dataset.modoMapa));
+$('#periodo').addEventListener('input', (e) => cambiarPeriodo(PERIODOS[Number(e.target.value)]));
+$('#mapa-periodo').addEventListener('change', (e) => cambiarPeriodo(Number(e.target.value)));
+$('#nivel').addEventListener('input', (e) => cambiarNivel(Number(e.target.value)));
+$('#mapa-nivel').addEventListener('change', (e) => cambiarNivel(Number(e.target.value)));
 $('#temporal').addEventListener('change', (e) => { estado.temporal = e.target.checked; recalcular(); });
 for (const esc of ESCENARIOS_MAR) {
   const b = document.createElement('button');
   b.textContent = esc.etiqueta;
   b.dataset.m = esc.m;
-  b.addEventListener('click', () => {
-    estado.nivelMar = esc.m;
-    $('#nivel').value = String(esc.m);
-    recalcular();
-  });
+  b.addEventListener('click', () => cambiarNivel(esc.m));
   $('#chips-mar').appendChild(b);
+  const o = document.createElement('option');
+  o.value = String(esc.m);
+  o.textContent = `+${fmt(esc.m, 2)} m · ${esc.etiqueta}`;
+  $('#mapa-nivel').appendChild(o);
+}
+for (const m of [3, 5]) {
+  const o = document.createElement('option');
+  o.value = String(m);
+  o.textContent = `+${m} m · Ilustrativo`;
+  $('#mapa-nivel').appendChild(o);
 }
 for (const t of LIMITES) {
   const li = document.createElement('li');
@@ -361,38 +388,20 @@ $('#btn-info').addEventListener('click', () => $('#info').showModal());
 
 // ---------- Mapa a pantalla completa ----------
 
-function describirPunto(lat, lon) {
-  const m = estado.malla;
-  const cota = cotaEn(m, lat, lon);
-  if (!Number.isFinite(cota)) return 'Sin datos de altura en este punto.';
-  const partes = [`Suelo a ${fmt(cota)} m`];
-  const i = indiceCelda(m, lat, lon);
-  const s = i >= 0 && estado.superficie ? estado.superficie[i] : NaN;
-  if (!Number.isNaN(s) && s - cota >= 0.05) partes.push(`agua ≈${fmt(s - cota)} m (${textoCuerpo(s - cota)})`);
-  else if (!Number.isNaN(s)) partes.push('agua en el borde');
-  else partes.push('seco en este escenario');
-  if (estado.modo === 'patricova') {
-    const z = zonasEnPunto(estado.zonas, lat, lon)[0];
-    partes.push(z ? z.descripcion : 'fuera de zonas PATRICOVA');
-  }
-  return partes.join(' · ');
-}
-
 const mapaCompleto = crearMapaCompleto({
   seccion: $('#mapa-completo'),
-  lienzo: $('#mapa-lienzo'),
+  contenedor: $('#mapa-lienzo'),
   info: $('#mapa-info'),
+  estadoEscala: $('#mapa-escala'),
   btnCerrar: $('#btn-cerrar-mapa'),
   btnCentrar: $('#btn-centrar-mapa'),
-  describir: describirPunto,
+  btnTodo: $('#btn-todo-mapa'),
   obtener: () => ({
-    malla: estado.malla,
-    base: estado.mapaBase,
-    zonas: estado.zonas,
+    modo: estado.modo,
+    periodo: estado.periodo,
+    nivel: nivelAgua(),
     lat: estado.posicion?.lat,
     lon: estado.posicion?.lon,
-    rumbo: norm360(estado.orientacion.rumbo + estado.ajusteNorte),
-    modo: estado.modo,
   }),
 });
 $('#minimapa').addEventListener('click', () => mapaCompleto.abrir());
@@ -468,3 +477,7 @@ if (q.has('lat') && q.has('lon')) {
   estado.fuentePos = 'demo';
   nuevaPosicion({ lat: Number(q.get('lat')), lon: Number(q.get('lon')), precision: 0, nombre: q.get('nombre') || 'punto de la URL' });
 }
+
+$('#mapa-periodo').value = String(estado.periodo);
+$('#mapa-nivel').value = String(estado.nivelMar);
+cambiarModo(estado.modo);

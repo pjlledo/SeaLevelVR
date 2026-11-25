@@ -17,8 +17,24 @@ Webapp educativa para el móvil: apuntas con la cámara y ves dibujada hasta dó
    - *Inundación (PATRICOVA)*: periodo de retorno de 25, 100 o 500 años.
    - *Subida del mar*: de 0 a 3 m, con atajos para los escenarios del IPCC en 2100 y un temporal opcional (+1 m, ilustrativo).
 7. **Resultado en tu punto**: cota del suelo, zona PATRICOVA, «el agua te llegaría por las rodillas», distancia y dirección del agua más cercana, y una silueta de 1,6 m como escala.
-8. **Minimapa** visto desde arriba con el agua, tu posición y hacia dónde miras. Ayuda cuando la brújula falla. Al pulsarlo se abre **a pantalla completa**: se arrastra para moverse, se pellizca (o rueda del ratón, o botones + y −) para acercar, y al tocar un punto se ve su cota, el agua que tendría y su zona PATRICOVA. «Volver a la cámara» lo cierra.
+8. **Minimapa** visto desde arriba con el agua, tu posición y hacia dónde miras. Ayuda cuando la brújula falla. Al pulsarlo se abre el **mapa de toda la Comunitat Valenciana** (ver más abajo).
 9. **Textos pedagógicos** (qué significa un periodo de retorno, probabilidad en 30 años, método «bañera») y una hoja «i» con los límites de precisión y las fuentes.
+
+## Mapa de toda la Comunitat Valenciana
+
+Al pulsar el minimapa se abre un mapa (Leaflet, copiado en `vendor/leaflet`) que va de la calle a toda la Comunitat:
+
+- **Inundación**: las zonas PATRICOVA del periodo elegido (25, 100 o 500 años) más la peligrosidad geomorfológica. Las dibuja el propio servicio del ICV para cada trozo del mapa (petición `export` de ArcGIS), con sus colores oficiales.
+- **Subida del mar**: la app pide al IGN el terreno de la zona visible y pinta en azul lo que queda por debajo del nivel elegido (método «bañera»). Cuanto más alejado el zoom, más gruesas las celdas: 5 m, 25 m, 200 m, 500 m o 1 km. Se muestra en pantalla qué tamaño se está usando.
+- **Tocar un punto**: cota del IGN, zona PATRICOVA o agua del escenario, y distancia a ti.
+- Mapa base del IGN (callejero gris) o foto aérea PNOA.
+
+**Por qué no se descargan todos los datos del PATRICOVA.** Lo he valorado y no compensa en un sitio estático:
+
+- El servicio del ICV ya entrega las zonas dibujadas para cualquier escala, con pocos KB por trozo, y la caché del navegador evita repetir peticiones.
+- Descargar todo obligaría a mantener un proceso de preparación y decenas de MB de geometría en el repositorio (solo la capa geomorfológica tiene casi 7.000 polígonos), además de actualizarlo a mano.
+- PATRICOVA está en revisión. Consultando el servicio, la app mostrará la versión nueva en cuanto el ICV la publique.
+- La contrapartida es depender de que el ICV y el IGN estén disponibles, algo que ya pasaba con la vista de cámara. Si se quiere uso sin conexión, el siguiente paso sería guardar en caché las teselas visitadas (service worker), no descargar todo.
 
 ## Probarlo en el móvil
 
@@ -98,11 +114,12 @@ js/app.js           flujo, estado y textos
 js/datos.js         consultas a PATRICOVA y al MDT, rejilla y polígonos
 js/sensores.js      cámara, GPS y orientación
 js/render.js        capa de agua y minimapa
-js/mapa.js          mapa a pantalla completa (desplazar, zoom, tocar un punto)
+js/mapa.js          mapa de toda la Comunitat (Leaflet, PATRICOVA del ICV, mar con el MDT)
+vendor/leaflet/     Leaflet 1.9.4 (licencia BSD-2)
 js/escenarios.js    cifras de escenarios y textos pedagógicos
 ```
 
-No hay dependencias ni paso de compilación.
+No hay paso de compilación. La única dependencia, Leaflet, va copiada en `vendor/`.
 
 ## Siguientes pasos posibles
 

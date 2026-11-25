@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#0b2540">
   <title>Sea Level VR · prototipo</title>
   <meta name="description" content="Prototipo educativo: mira con la cámara del móvil hasta dónde llegaría el agua en una inundación o con la subida del nivel del mar en la Comunitat Valenciana.">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="css/estilos.css">
 </head>
 <body>
@@ -73,7 +74,7 @@
 
       <div id="ctl-mar" class="plegable" hidden>
         <label for="nivel">Nivel del mar: <b id="nivel-valor">+0,56 m</b></label>
-        <input id="nivel" type="range" min="0" max="3" step="0.05" value="0.56">
+        <input id="nivel" type="range" min="0" max="5" step="0.05" value="0.56">
         <div id="chips-mar" class="chips-escenario"></div>
         <label class="check"><input id="temporal" type="checkbox"> Añadir temporal (+1 m, ilustrativo)</label>
       </div>
@@ -95,19 +96,30 @@
   </section>
 
   <!-- Mapa a pantalla completa -->
-  <section id="mapa-completo" hidden aria-label="Mapa a pantalla completa">
-    <canvas id="mapa-lienzo"></canvas>
+  <section id="mapa-completo" hidden aria-label="Mapa de la Comunitat Valenciana">
+    <div id="mapa-lienzo"></div>
     <div class="mapa-barra">
       <button id="btn-cerrar-mapa" class="primario">← Volver a la cámara</button>
-      <button id="btn-centrar-mapa" class="redondo" aria-label="Centrar en mi posición">◎</button>
     </div>
     <div class="mapa-zoom">
       <button data-zoom="+" class="redondo" aria-label="Acercar">+</button>
       <button data-zoom="-" class="redondo" aria-label="Alejar">−</button>
+      <button id="btn-centrar-mapa" class="redondo" aria-label="Centrar en mi posición" title="Centrar en mí">◎</button>
+      <button id="btn-todo-mapa" class="redondo" aria-label="Ver toda la Comunitat Valenciana" title="Toda la Comunitat">CV</button>
     </div>
     <div class="mapa-pie">
+      <div class="modos mapa-modos" role="tablist">
+        <button data-modo-mapa="patricova" role="tab">Inundación</button>
+        <button data-modo-mapa="mar" role="tab">Subida del mar</button>
+      </div>
+      <div class="mapa-ctl">
+        <select id="mapa-periodo" aria-label="Periodo de retorno">
+          <option value="25">25 años</option><option value="100">100 años</option><option value="500">500 años</option>
+        </select>
+        <select id="mapa-nivel" aria-label="Nivel del mar" hidden></select>
+        <span id="mapa-escala"></span>
+      </div>
       <p id="mapa-info"></p>
-      <p class="leyenda"><span class="item"><i class="c-agua"></i>agua del escenario</span><span class="item"><i class="c-zona"></i>zona PATRICOVA</span><span class="item"><i class="c-geo"></i>geomorfológica</span><span class="item"><i class="c-yo"></i>tú</span></p>
     </div>
   </section>
 
@@ -117,7 +129,7 @@
       <h2>Qué estás viendo</h2>
       <p><b>Inundación (PATRICOVA).</b> El Plan de Acción Territorial sobre prevención del Riesgo de Inundación en la Comunitat Valenciana (PATRICOVA, 2015) marca las zonas que pueden inundarse con una crecida de 25, 100 o 500 años. Si estás en una de esas zonas, la app dibuja el agua con 0,4 m (calado bajo, menos de 0,8 m) o 1 m (calado alto, más de 0,8 m).</p>
       <p><b>Subida del mar.</b> Elige cuánto sube el mar. La app pinta todo el terreno que queda por debajo de ese nivel. Las cifras de 2100 son medias globales del IPCC; en Valencia también influyen el hundimiento del terreno, las mareas y los temporales.</p>
-      <p><b>El minimapa</b> (arriba a la derecha) muestra unos 300 m a tu alrededor visto desde arriba: el azul es agua, el punto amarillo eres tú y el abanico es hacia dónde miras.</p>
+      <p><b>El minimapa</b> (arriba a la derecha) muestra unos 300 m a tu alrededor visto desde arriba: el azul es agua, el punto amarillo eres tú y el abanico es hacia dónde miras. Al pulsarlo se abre el <b>mapa de toda la Comunitat Valenciana</b>: las zonas PATRICOVA las dibuja el servicio oficial del ICV y la subida del mar se calcula con el terreno del IGN de la zona que estés viendo.</p>
       <h2>Límites de precisión</h2>
       <ul id="lista-limites"></ul>
       <h2>Fuentes de datos</h2>
@@ -132,6 +144,7 @@
 
   <div id="aviso-flotante" role="status" hidden></div>
 
+  <script src="vendor/leaflet/leaflet.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
