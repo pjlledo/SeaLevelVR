@@ -17,7 +17,7 @@ Webapp educativa para el móvil: apuntas con la cámara y ves dibujada hasta dó
    - *Inundación (PATRICOVA)*: periodo de retorno de 25, 100 o 500 años.
    - *Subida del mar*: de 0 a 3 m, con atajos para los escenarios del IPCC en 2100 y un temporal opcional (+1 m, ilustrativo).
 7. **Resultado en tu punto**: cota del suelo, zona PATRICOVA, «el agua te llegaría por las rodillas», distancia y dirección del agua más cercana, y una silueta de 1,6 m como escala.
-8. **Minimapa** visto desde arriba con el agua, tu posición y hacia dónde miras. Ayuda cuando la brújula falla.
+8. **Minimapa** visto desde arriba con el agua, tu posición y hacia dónde miras. Ayuda cuando la brújula falla. Al pulsarlo se abre **a pantalla completa**: se arrastra para moverse, se pellizca (o rueda del ratón, o botones + y −) para acercar, y al tocar un punto se ve su cota, el agua que tendría y su zona PATRICOVA. «Volver a la cámara» lo cierra.
 9. **Textos pedagógicos** (qué significa un periodo de retorno, probabilidad en 30 años, método «bañera») y una hoja «i» con los límites de precisión y las fuentes.
 
 ## Probarlo en el móvil
@@ -98,6 +98,7 @@ js/app.js           flujo, estado y textos
 js/datos.js         consultas a PATRICOVA y al MDT, rejilla y polígonos
 js/sensores.js      cámara, GPS y orientación
 js/render.js        capa de agua y minimapa
+js/mapa.js          mapa a pantalla completa (desplazar, zoom, tocar un punto)
 js/escenarios.js    cifras de escenarios y textos pedagógicos
 ```
 

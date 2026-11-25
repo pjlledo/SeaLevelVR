@@ -49,7 +49,8 @@
       <button id="btn-info" class="redondo" aria-label="Información y límites">i</button>
     </header>
 
-    <canvas id="minimapa" width="132" height="132" aria-label="Minimapa"></canvas>
+    <canvas id="minimapa" width="132" height="132" role="button" tabindex="0" aria-label="Minimapa: pulsa para verlo a pantalla completa"></canvas>
+    <span id="minimapa-pista" aria-hidden="true">⤢</span>
 
     <div id="calibrar" hidden>
       <button id="btn-izq" class="redondo" aria-label="Girar norte a la izquierda">◀</button>
@@ -90,6 +91,23 @@
       </div>
       <p id="nota-escenario" class="nota plegable"></p>
       <p class="atribucion">PATRICOVA 2015 © GVA/ICV (CC BY) · Obra derivada de MDT05 CC-BY 4.0 scne.es · Escenarios: IPCC AR6 (EEA) · <b>Aproximación educativa, no usar para decisiones de seguridad (112)</b></p>
+    </div>
+  </section>
+
+  <!-- Mapa a pantalla completa -->
+  <section id="mapa-completo" hidden aria-label="Mapa a pantalla completa">
+    <canvas id="mapa-lienzo"></canvas>
+    <div class="mapa-barra">
+      <button id="btn-cerrar-mapa" class="primario">← Volver a la cámara</button>
+      <button id="btn-centrar-mapa" class="redondo" aria-label="Centrar en mi posición">◎</button>
+    </div>
+    <div class="mapa-zoom">
+      <button data-zoom="+" class="redondo" aria-label="Acercar">+</button>
+      <button data-zoom="-" class="redondo" aria-label="Alejar">−</button>
+    </div>
+    <div class="mapa-pie">
+      <p id="mapa-info"></p>
+      <p class="leyenda"><span class="item"><i class="c-agua"></i>agua del escenario</span><span class="item"><i class="c-zona"></i>zona PATRICOVA</span><span class="item"><i class="c-geo"></i>geomorfológica</span><span class="item"><i class="c-yo"></i>tú</span></p>
     </div>
   </section>
 
