@@ -215,6 +215,7 @@ function analisis() {
   const zonasAqui = zonasEnPunto(estado.zonas, p.lat, p.lon);
   let prof = 0;
   if (estado.modo === 'mar') prof = Math.max(0, nivelAgua() - suelo);
+  if (prof < 0.05) prof = 0; // por debajo de 5 cm se considera seco
   else if (i >= 0 && estado.raster) prof = estado.raster.prof[estado.periodo][i];
   // Agua más cercana
   let cerca = null;
@@ -307,7 +308,9 @@ function actualizarTextos() {
         frase.textContent = `El mar llegaría ${textoCuerpo(prof)} (≈${fmt(prof)} m)`;
         detalle.textContent = `Tu suelo está a ${fmt(a.suelo)} m y el agua a ${fmt(W, 2)} m sobre el nivel actual.`;
       } else {
-        frase.textContent = `El agua quedaría ${fmt(margen)} m por debajo de tus pies`;
+        frase.textContent = margen < 0.05
+          ? 'El agua llegaría justo hasta tus pies'
+          : `El agua quedaría ${fmt(margen)} m por debajo de tus pies`;
         detalle.textContent = cerca;
       }
       const esc = ESCENARIOS_MAR.find((e) => Math.abs(e.m - estado.nivelMar) < 0.001);
@@ -353,6 +356,11 @@ for (const t of LIMITES) {
   $('#lista-limites').appendChild(li);
 }
 $('#btn-info').addEventListener('click', () => $('#info').showModal());
+$('#asa').addEventListener('click', () => {
+  const plegado = $('#panel').classList.toggle('plegado');
+  $('#asa').textContent = plegado ? 'Mostrar controles' : 'Ocultar controles';
+  $('#asa').setAttribute('aria-expanded', String(!plegado));
+});
 
 let temporizadorAviso;
 function avisar(t) {
@@ -369,6 +377,7 @@ const capa = $('#capa');
 const ctx = capa.getContext('2d');
 const mini = $('#minimapa');
 const ctxMini = mini.getContext('2d');
+const fondoDemo = $('#fondo-demo');
 let dpr = 1;
 
 function redimensionar() {
@@ -397,6 +406,12 @@ function bucle() {
     malla: estado.malla, superficie: estado.superficie,
     lat: p?.lat, lon: p?.lon, ojos, rumbo, inclinacion: o.inclinacion, giro: o.giro, cubierto,
   });
+  // En el fondo de ejemplo (sin cámara), el horizonte pintado sigue a la inclinación.
+  if (!fondoDemo.hidden) {
+    const f = Math.max(innerWidth, innerHeight) / 2 / Math.tan((65 * Math.PI) / 360);
+    const y = innerHeight / 2 + f * Math.tan(o.inclinacion);
+    fondoDemo.style.background = `linear-gradient(#8ec5ea 0px, #cfe6f3 ${y - 2}px, #7d8b6a ${y}px, #4f5a40 ${innerHeight}px)`;
+  }
   ctxMini.setTransform(dpr, 0, 0, dpr, 0, 0);
   dibujarMinimapa(ctxMini, 132, estado.mapaBase, estado.malla, p?.lat, p?.lon, rumbo);
   requestAnimationFrame(bucle);

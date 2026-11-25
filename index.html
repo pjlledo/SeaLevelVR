@@ -58,18 +58,19 @@
     </div>
 
     <div id="panel">
-      <div class="modos" role="tablist">
+      <button id="asa" aria-expanded="true">Ocultar controles</button>
+      <div class="modos plegable" role="tablist">
         <button data-modo="patricova" class="activo" role="tab">Inundación (PATRICOVA)</button>
         <button data-modo="mar" role="tab">Subida del mar</button>
       </div>
 
-      <div id="ctl-patricova">
+      <div id="ctl-patricova" class="plegable">
         <label for="periodo">Periodo de retorno: <b id="periodo-valor">100 años</b></label>
         <input id="periodo" type="range" min="0" max="2" step="1" value="1">
         <div class="marcas"><span>25 años</span><span>100 años</span><span>500 años</span></div>
       </div>
 
-      <div id="ctl-mar" hidden>
+      <div id="ctl-mar" class="plegable" hidden>
         <label for="nivel">Nivel del mar: <b id="nivel-valor">+0,56 m</b></label>
         <input id="nivel" type="range" min="0" max="3" step="0.05" value="0.56">
         <div id="chips-mar" class="chips-escenario"></div>
@@ -87,7 +88,7 @@
           <p id="detalle"></p>
         </div>
       </div>
-      <p id="nota-escenario" class="nota"></p>
+      <p id="nota-escenario" class="nota plegable"></p>
       <p class="atribucion">PATRICOVA 2015 © GVA/ICV (CC BY) · Obra derivada de MDT05 CC-BY 4.0 scne.es · Escenarios: IPCC AR6 (EEA) · <b>Aproximación educativa, no usar para decisiones de seguridad (112)</b></p>
     </div>
   </section>
