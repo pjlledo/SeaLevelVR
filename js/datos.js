@@ -62,43 +62,47 @@ export function parsearASC(txt) {
     h[clave.toLowerCase()] = parseFloat(valor);
     k++;
   }
-  const ncols = h.ncols, nrows = h.nrows, cs = h.cellsize;
-  const x0 = h.xllcorner ?? h.xllcenter - cs / 2;
-  const y0 = h.yllcorner ?? h.yllcenter - cs / 2;
+  // El WCS usa "cellsize" si las celdas son cuadradas y "dx"/"dy" si no lo son.
+  const ncols = h.ncols, nrows = h.nrows;
+  const csx = h.cellsize ?? h.dx, csy = h.cellsize ?? h.dy;
+  const x0 = h.xllcorner ?? h.xllcenter - csx / 2;
+  const y0 = h.yllcorner ?? h.yllcenter - csy / 2;
   const valores = lineas.slice(k).join(' ').trim().split(/\s+/).map(Number);
-  if (!ncols || !nrows || valores.length < ncols * nrows) throw new Error('Rejilla de elevación incompleta');
+  if (!ncols || !nrows || !csx || !csy || valores.length < ncols * nrows) throw new Error('Rejilla de elevación incompleta');
   const z = new Float32Array(ncols * nrows);
   for (let j = 0; j < z.length; j++) {
     const v = valores[j];
     z[j] = h.nodata_value !== undefined && v === h.nodata_value ? NaN : v;
   }
-  return { ncols, nrows, cs, x0, y0, z };
+  return { ncols, nrows, csx, csy, x0, y0, z };
 }
 
 // Índice de la celda que contiene (lat, lon); -1 si está fuera. Fila 0 = norte.
 export function indiceCelda(m, lat, lon) {
-  const c = Math.floor((lon - m.x0) / m.cs);
-  const rs = Math.floor((lat - m.y0) / m.cs);
+  const c = Math.floor((lon - m.x0) / m.csx);
+  const rs = Math.floor((lat - m.y0) / m.csy);
   if (c < 0 || c >= m.ncols || rs < 0 || rs >= m.nrows) return -1;
   return (m.nrows - 1 - rs) * m.ncols + c;
 }
 
 export function centroCelda(m, i) {
   const r = Math.floor(i / m.ncols), c = i % m.ncols;
-  return { lat: m.y0 + (m.nrows - r - 0.5) * m.cs, lon: m.x0 + (c + 0.5) * m.cs };
+  return { lat: m.y0 + (m.nrows - r - 0.5) * m.csy, lon: m.x0 + (c + 0.5) * m.csx };
 }
 
 // Cota interpolada (bilineal) en un punto. Los datos de origen vienen en metros enteros.
 export function cotaEn(m, lat, lon) {
-  const fx = (lon - m.x0) / m.cs - 0.5;
-  const fy = (m.y0 + m.nrows * m.cs - lat) / m.cs - 0.5;
+  const fx = (lon - m.x0) / m.csx - 0.5;
+  const fy = (m.y0 + m.nrows * m.csy - lat) / m.csy - 0.5;
   const c0 = Math.max(0, Math.min(m.ncols - 2, Math.floor(fx)));
   const r0 = Math.max(0, Math.min(m.nrows - 2, Math.floor(fy)));
   const tx = Math.max(0, Math.min(1, fx - c0)), ty = Math.max(0, Math.min(1, fy - r0));
   const z = (r, c) => m.z[r * m.ncols + c];
   const a = z(r0, c0), b = z(r0, c0 + 1), c = z(r0 + 1, c0), d = z(r0 + 1, c0 + 1);
   const v = a * (1 - tx) * (1 - ty) + b * tx * (1 - ty) + c * (1 - tx) * ty + d * tx * ty;
-  return Number.isNaN(v) ? m.z[indiceCelda(m, lat, lon)] : v;
+  if (!Number.isNaN(v)) return v;
+  const i = indiceCelda(m, lat, lon);
+  return i >= 0 ? m.z[i] : NaN;
 }
 
 // ---------- PATRICOVA 2015 (GVA / ICV) ----------

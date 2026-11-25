@@ -211,12 +211,13 @@ function analisis() {
   const p = estado.posicion, m = estado.malla;
   if (!p || !m) return null;
   const suelo = cotaEn(m, p.lat, p.lon);
+  if (!Number.isFinite(suelo)) return null; // el punto cae fuera de la rejilla
   const i = indiceCelda(m, p.lat, p.lon);
   const zonasAqui = zonasEnPunto(estado.zonas, p.lat, p.lon);
   let prof = 0;
   if (estado.modo === 'mar') prof = Math.max(0, nivelAgua() - suelo);
-  if (prof < 0.05) prof = 0; // por debajo de 5 cm se considera seco
   else if (i >= 0 && estado.raster) prof = estado.raster.prof[estado.periodo][i];
+  if (prof < 0.05) prof = 0; // por debajo de 5 cm se considera seco
   // Agua más cercana
   let cerca = null;
   if (estado.superficie) {
