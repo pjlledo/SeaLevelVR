@@ -52,7 +52,7 @@ export function dibujarAgua(ctx, ancho, alto, e) {
   const mLon = mPorGradoLon(e.lat);
   const paso = 4; // píxeles por columna
   const pasoM = 2; // metros entre muestras del terreno
-  const radio = (Math.min(m.ncols * mLon, m.nrows * M_POR_GRADO_LAT) * m.cs) / 2;
+  const radio = Math.min(m.ncols * m.csx * mLon, m.nrows * m.csy * M_POR_GRADO_LAT) / 2;
   const grad = ctx.createLinearGradient(0, yHorizonte, 0, yHorizonte + alto);
   grad.addColorStop(0, 'rgba(70, 170, 230, 0.35)');
   grad.addColorStop(1, 'rgba(20, 100, 190, 0.6)');
@@ -125,16 +125,16 @@ export function pintarMapaBase(m, superficie, geomorf, mostrarGeomorf) {
 export function dibujarMinimapa(ctx, lado, base, m, lat, lon, rumbo) {
   ctx.clearRect(0, 0, lado, lado);
   if (!base || !m) return;
-  const anchoM = m.ncols * m.cs * mPorGradoLon(lat);
-  const altoM = m.nrows * m.cs * M_POR_GRADO_LAT;
+  const anchoM = m.ncols * m.csx * mPorGradoLon(lat);
+  const altoM = m.nrows * m.csy * M_POR_GRADO_LAT;
   const escala = lado / Math.max(anchoM, altoM);
   const w = anchoM * escala, h = altoM * escala;
   const ox = (lado - w) / 2, oy = (lado - h) / 2;
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(base, ox, oy, w, h);
   // Posición del usuario dentro de la rejilla
-  const px = ox + ((lon - m.x0) / (m.ncols * m.cs)) * w;
-  const py = oy + (1 - (lat - m.y0) / (m.nrows * m.cs)) * h;
+  const px = ox + ((lon - m.x0) / (m.ncols * m.csx)) * w;
+  const py = oy + (1 - (lat - m.y0) / (m.nrows * m.csy)) * h;
   // Cono de visión
   const a = (rumbo - 90) * RAD;
   const ab = FOV_LADO_LARGO * 0.38;
