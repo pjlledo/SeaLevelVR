@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b2540">
+  <title>Sea Level VR · prototipo</title>
+  <meta name="description" content="Prototipo educativo: mira con la cámara del móvil hasta dónde llegaría el agua en una inundación o con la subida del nivel del mar en la Comunitat Valenciana.">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <!-- Vista de cámara -->
+  <video id="video" playsinline muted autoplay></video>
+  <div id="fondo-demo" hidden></div>
+  <canvas id="capa"></canvas>
+
+  <!-- Pantalla de inicio y permisos -->
+  <section id="inicio" class="pantalla">
+    <div class="tarjeta">
+      <p class="sobre">Prototipo educativo · Comunitat Valenciana</p>
+      <h1>¿Hasta dónde llegaría el agua?</h1>
+      <p>Apunta con la cámara a tu alrededor y verás dibujada el agua de una <strong>inundación</strong> (mapas oficiales PATRICOVA) o de una <strong>subida del nivel del mar</strong>, calculada con la altura real del terreno.</p>
+      <p>Para eso la app te pedirá tres permisos:</p>
+      <ul class="permisos">
+        <li><span>📷</span> <b>Cámara</b>, para ver lo que tienes delante. El vídeo no sale del móvil.</li>
+        <li><span>📍</span> <b>Ubicación</b>, para consultar los mapas de tu punto.</li>
+        <li><span>🧭</span> <b>Movimiento y orientación</b>, para saber hacia dónde miras.</li>
+      </ul>
+      <button id="btn-empezar" class="primario">Empezar</button>
+      <button id="btn-demo" class="secundario">Probar sin GPS (lugares de ejemplo)</button>
+      <p class="aviso">Es una aproximación con fines educativos. <b>No la uses para decisiones de seguridad</b>: en una emergencia, sigue a Protección Civil y llama al 112.</p>
+    </div>
+  </section>
+
+  <!-- Elección de lugar de demostración -->
+  <section id="demo" class="pantalla" hidden>
+    <div class="tarjeta">
+      <h2>Elige un lugar de ejemplo</h2>
+      <p>Los datos se consultan igual que con GPS. Si el móvil no tiene brújula, arrastra con el dedo para girar la vista.</p>
+      <div id="lista-demo" class="lista"></div>
+      <button id="btn-demo-volver" class="secundario">Volver</button>
+    </div>
+  </section>
+
+  <!-- Interfaz principal -->
+  <section id="app" hidden>
+    <header id="estado">
+      <div id="chips"></div>
+      <button id="btn-info" class="redondo" aria-label="Información y límites">i</button>
+    </header>
+
+    <canvas id="minimapa" width="132" height="132" aria-label="Minimapa"></canvas>
+
+    <div id="calibrar" hidden>
+      <button id="btn-izq" class="redondo" aria-label="Girar norte a la izquierda">◀</button>
+      <span>Ajustar norte <b id="ajuste">0°</b></span>
+      <button id="btn-der" class="redondo" aria-label="Girar norte a la derecha">▶</button>
+    </div>
+
+    <div id="panel">
+      <div class="modos" role="tablist">
+        <button data-modo="patricova" class="activo" role="tab">Inundación (PATRICOVA)</button>
+        <button data-modo="mar" role="tab">Subida del mar</button>
+      </div>
+
+      <div id="ctl-patricova">
+        <label for="periodo">Periodo de retorno: <b id="periodo-valor">100 años</b></label>
+        <input id="periodo" type="range" min="0" max="2" step="1" value="1">
+        <div class="marcas"><span>25 años</span><span>100 años</span><span>500 años</span></div>
+      </div>
+
+      <div id="ctl-mar" hidden>
+        <label for="nivel">Nivel del mar: <b id="nivel-valor">+0,56 m</b></label>
+        <input id="nivel" type="range" min="0" max="3" step="0.05" value="0.56">
+        <div id="chips-mar" class="chips-escenario"></div>
+        <label class="check"><input id="temporal" type="checkbox"> Añadir temporal (+1 m, ilustrativo)</label>
+      </div>
+
+      <div id="resultado">
+        <svg id="regla" viewBox="0 0 40 90" aria-hidden="true">
+          <rect id="regla-agua" x="0" y="90" width="40" height="0" fill="#2f8fdc" opacity="0.8"/>
+          <circle cx="20" cy="12" r="7" fill="none" stroke="#fff" stroke-width="2.5"/>
+          <path d="M20 19 V58 M20 58 L11 88 M20 58 L29 88 M8 32 L32 32" stroke="#fff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div>
+          <p id="frase">Buscando tu ubicación…</p>
+          <p id="detalle"></p>
+        </div>
+      </div>
+      <p id="nota-escenario" class="nota"></p>
+      <p class="atribucion">PATRICOVA 2015 © GVA/ICV (CC BY) · Obra derivada de MDT05 CC-BY 4.0 scne.es · Escenarios: IPCC AR6 (EEA) · <b>Aproximación educativa, no usar para decisiones de seguridad (112)</b></p>
+    </div>
+  </section>
+
+  <!-- Hoja de información -->
+  <dialog id="info">
+    <article>
+      <h2>Qué estás viendo</h2>
+      <p><b>Inundación (PATRICOVA).</b> El Plan de Acción Territorial sobre prevención del Riesgo de Inundación en la Comunitat Valenciana (PATRICOVA, 2015) marca las zonas que pueden inundarse con una crecida de 25, 100 o 500 años. Si estás en una de esas zonas, la app dibuja el agua con 0,4 m (calado bajo, menos de 0,8 m) o 1 m (calado alto, más de 0,8 m).</p>
+      <p><b>Subida del mar.</b> Elige cuánto sube el mar. La app pinta todo el terreno que queda por debajo de ese nivel. Las cifras de 2100 son medias globales del IPCC; en Valencia también influyen el hundimiento del terreno, las mareas y los temporales.</p>
+      <p><b>El minimapa</b> (arriba a la derecha) muestra unos 300 m a tu alrededor visto desde arriba: el azul es agua, el punto amarillo eres tú y el abanico es hacia dónde miras.</p>
+      <h2>Límites de precisión</h2>
+      <ul id="lista-limites"></ul>
+      <h2>Fuentes de datos</h2>
+      <ul>
+        <li>PATRICOVA 2015, peligrosidad de inundación. Generalitat Valenciana, Institut Cartogràfic Valencià. Licencia CC BY. <a href="https://datos.gob.es/es/catalogo/a10002983-patricova-peligrosidad-por-inundacion-plan-de-accion-territorial-de-caracter-sectorial-sobre-prevencion-del-riesgo-de-inundacion-en-la-comunitat-valenciana" target="_blank" rel="noopener">Ficha en datos.gob.es</a>. Está en revisión; la nueva cartografía aún no está publicada.</li>
+        <li>Modelo Digital del Terreno MDT05, Instituto Geográfico Nacional. <a href="https://www.ign.es/resources/licencia/Condiciones_licenciaUso_IGN.pdf" target="_blank" rel="noopener">MDT05 CC-BY 4.0 scne.es</a>. La app interpola la cota (obra derivada).</li>
+        <li>Subida del nivel del mar: IPCC AR6, tal como la resume la Agencia Europea de Medio Ambiente. <a href="https://www.eea.europa.eu/en/analysis/indicators/global-and-european-sea-level-rise/" target="_blank" rel="noopener">Global and European sea level rise</a>.</li>
+      </ul>
+      <form method="dialog"><button class="primario">Entendido</button></form>
+    </article>
+  </dialog>
+
+  <div id="aviso-flotante" role="status" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
